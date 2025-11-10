@@ -51,7 +51,6 @@ data/crema_d/
 *.mp3
 
 # Model files (large trained models)
-*.pkl
 *.h5
 *.keras
 *.pt
