@@ -171,10 +171,11 @@ def train_feedforward_model(X_train, y_train, X_val, y_val, num_classes, epochs=
     )
     
     checkpoint = ModelCheckpoint(
-        'best_feedforward_model.keras',
+        'best_feedforward_model.h5',
         monitor='val_accuracy',
         save_best_only=True,
-        verbose=1
+        verbose=1,
+        save_format='h5'
     )
     
     # Train model
@@ -282,11 +283,12 @@ def train_cnn_model(X_train, y_train, X_val, y_val, num_classes, epochs=100):
     )
     
     checkpoint = ModelCheckpoint(
-        'best_cnn_model.keras',
-        monitor='val_accuracy',
-        save_best_only=True,
-        verbose=1
-    )
+    'best_cnn_model.h5',  # Changed from .keras to .h5
+     monitor='val_accuracy',
+     save_best_only=True,
+     verbose=1,
+     save_format='h5'  # Added this line
+)
     
     # Train model
     print("\nTraining model...")
@@ -452,8 +454,8 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("SAVING MODELS")
     print("="*60)
-    ffnn_model.save('feedforward_model.keras')
-    cnn_model.save('cnn_model.keras')
+    ffnn_model.save('feedforward_model.h5')  # Changed from .keras
+    cnn_model.save('cnn_model.h5')
     print("✓ Models saved successfully!")
     
     print("\n" + "="*60)

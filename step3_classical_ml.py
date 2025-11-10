@@ -108,7 +108,7 @@ def train_svm(X_train, y_train, X_test, y_test, tune_hyperparameters=True):
         }
         
         # Grid search with cross-validation
-        svm = SVC(random_state=42)
+        svm = SVC(probability=True, random_state=42)
         grid_search = GridSearchCV(
             svm, param_grid, cv=5, 
             scoring='accuracy', n_jobs=-1, verbose=1
@@ -121,7 +121,7 @@ def train_svm(X_train, y_train, X_test, y_test, tune_hyperparameters=True):
         best_svm = grid_search.best_estimator_
     else:
         print("\nTraining with default parameters...")
-        best_svm = SVC(kernel='rbf', C=10, gamma='scale', random_state=42)
+        best_svm = SVC(kernel='rbf', C=10, gamma='scale', probability=True, random_state=42)
         best_svm.fit(X_train, y_train)
     
     # Evaluate on test set

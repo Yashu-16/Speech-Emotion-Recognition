@@ -1,410 +1,392 @@
 """
-Speech Emotion Recognition - Step 5: Model Fusion & Advanced Visualization
-Ensemble models and create t-SNE visualizations
+Speech Emotion Recognition - Step 4: Deep Learning Models
+Train CNN and Feedforward Neural Networks using TensorFlow/Keras
 """
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-import joblib
+
+# TensorFlow/Keras imports
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras import layers, models
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+
 import warnings
 warnings.filterwarnings('ignore')
 
+# Set random seeds for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
 # ============================================================================
-# LOAD TRAINED MODELS
+# DATA PREPARATION FOR DEEP LEARNING
 # ============================================================================
 
-def load_all_models():
+def prepare_data_for_dl(feature_file, test_size=0.2, val_size=0.1, random_state=42):
     """
-    Load all trained models (classical ML and deep learning)
+    Prepare data for deep learning with train/validation/test splits
     """
     print("\n" + "="*60)
-    print("LOADING TRAINED MODELS")
+    print("PREPARING DATA FOR DEEP LEARNING")
     print("="*60)
     
-    models = {}
+    # Load features
+    df = pd.read_csv(feature_file)
+    print(f"\nLoaded {len(df)} samples")
     
-    # Load classical ML models
-    try:
-        models['SVM'] = joblib.load('svm_model.pkl')
-        print("✓ Loaded SVM model")
-    except:
-        print("✗ SVM model not found")
+    # Separate features and labels
+    feature_cols = [col for col in df.columns if col not in ['emotion', 'file_path']]
+    X = df[feature_cols].values
+    y = df['emotion'].values
     
-    try:
-        models['Random Forest'] = joblib.load('random_forest_model.pkl')
-        print("✓ Loaded Random Forest model")
-    except:
-        print("✗ Random Forest model not found")
+    # Encode labels
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+    num_classes = len(label_encoder.classes_)
     
-    # Load deep learning models
-    try:
-        models['Feedforward NN'] = keras.models.load_model('best_feedforward_model.keras')
-        print("✓ Loaded Feedforward NN model")
-    except:
-        print("✗ Feedforward NN model not found")
+    print(f"Number of classes: {num_classes}")
+    print(f"Classes: {label_encoder.classes_}")
     
-    try:
-        models['CNN'] = keras.models.load_model('best_cnn_model.keras')
-        print("✓ Loaded CNN model")
-    except:
-        print("✗ CNN model not found")
+    # One-hot encode labels for neural networks
+    y_categorical = to_categorical(y_encoded, num_classes)
     
-    # Load preprocessing objects
-    try:
-        scaler = joblib.load('scaler.pkl')
-        label_encoder = joblib.load('label_encoder.pkl')
-        print("✓ Loaded preprocessing objects")
-    except:
-        print("✗ Preprocessing objects not found")
-        scaler, label_encoder = None, None
+    # First split: separate test set
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, y_categorical,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=y_encoded
+    )
     
-    return models, scaler, label_encoder
+    # Second split: separate validation from training
+    val_size_adjusted = val_size / (1 - test_size)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp,
+        test_size=val_size_adjusted,
+        random_state=random_state
+    )
+    
+    # Standardize features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+    
+    print(f"\nTrain set: {X_train_scaled.shape[0]} samples")
+    print(f"Validation set: {X_val_scaled.shape[0]} samples")
+    print(f"Test set: {X_test_scaled.shape[0]} samples")
+    print(f"Feature dimension: {X_train_scaled.shape[1]}")
+    
+    return (X_train_scaled, X_val_scaled, X_test_scaled,
+            y_train, y_val, y_test,
+            scaler, label_encoder, num_classes)
 
 # ============================================================================
-# ENSEMBLE FUSION METHODS
+# FEEDFORWARD NEURAL NETWORK (FULLY CONNECTED)
 # ============================================================================
 
-def voting_ensemble(models, X_test, y_test, label_encoder, voting='hard'):
+def create_feedforward_model(input_dim, num_classes, dropout_rate=0.5):
     """
-    Ensemble using voting (hard or soft)
+    Create a Feedforward Neural Network (Multi-layer Perceptron)
     
-    Args:
-        models: Dictionary of trained models
-        X_test: Test features
-        y_test: True labels (one-hot encoded for DL models)
-        label_encoder: Label encoder object
-        voting: 'hard' for majority vote, 'soft' for probability averaging
+    Architecture:
+    - Input layer
+    - Dense layers with ReLU activation
+    - Dropout for regularization
+    - Output layer with softmax
+    """
+    model = models.Sequential([
+        # Input layer
+        layers.Input(shape=(input_dim,)),
+        
+        # First hidden layer
+        layers.Dense(256, activation='relu', name='dense_1'),
+        layers.BatchNormalization(),
+        layers.Dropout(dropout_rate),
+        
+        # Second hidden layer
+        layers.Dense(128, activation='relu', name='dense_2'),
+        layers.BatchNormalization(),
+        layers.Dropout(dropout_rate),
+        
+        # Third hidden layer
+        layers.Dense(64, activation='relu', name='dense_3'),
+        layers.BatchNormalization(),
+        layers.Dropout(dropout_rate),
+        
+        # Fourth hidden layer
+        layers.Dense(32, activation='relu', name='dense_4'),
+        layers.Dropout(dropout_rate),
+        
+        # Output layer
+        layers.Dense(num_classes, activation='softmax', name='output')
+    ])
     
-    Returns:
-        Predictions and accuracy
+    return model
+
+def train_feedforward_model(X_train, y_train, X_val, y_val, num_classes, epochs=100):
+    """
+    Train Feedforward Neural Network
     """
     print("\n" + "="*60)
-    print(f"ENSEMBLE: {voting.upper()} VOTING")
+    print("TRAINING FEEDFORWARD NEURAL NETWORK")
     print("="*60)
     
-    predictions_list = []
+    # Create model
+    input_dim = X_train.shape[1]
+    model = create_feedforward_model(input_dim, num_classes)
     
-    # Get predictions from each model
-    for model_name, model in models.items():
-        print(f"Getting predictions from {model_name}...")
+    # Compile model
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    # Print model summary
+    print("\nModel Architecture:")
+    model.summary()
+    
+    # Callbacks
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=15,
+        restore_best_weights=True,
+        verbose=1
+    )
+    
+    reduce_lr = ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-7,
+        verbose=1
+    )
+    
+    checkpoint = ModelCheckpoint(
+        'best_feedforward_model.h5',
+        monitor='val_accuracy',
+        save_best_only=True,
+        verbose=1,
+        save_format='h5'
+    )
+    
+    # Train model
+    print("\nTraining model...")
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=32,
+        callbacks=[early_stopping, reduce_lr, checkpoint],
+        verbose=1
+    )
+    
+    return model, history
+
+# ============================================================================
+# CONVOLUTIONAL NEURAL NETWORK (CNN)
+# ============================================================================
+
+def create_cnn_model(input_dim, num_classes, dropout_rate=0.5):
+    """
+    Create a 1D CNN for feature-based emotion recognition
+    
+    Architecture:
+    - Reshape input for 1D convolution
+    - Conv1D layers with pooling
+    - Flatten and dense layers
+    - Output layer
+    """
+    model = models.Sequential([
+        # Reshape for CNN: (batch, features, 1)
+        layers.Input(shape=(input_dim,)),
+        layers.Reshape((input_dim, 1)),
         
-        if model_name in ['Feedforward NN', 'CNN']:
-            # Deep learning model - returns probabilities
-            y_pred_proba = model.predict(X_test, verbose=0)
-            
-            if voting == 'hard':
-                y_pred = np.argmax(y_pred_proba, axis=1)
-            else:
-                y_pred = y_pred_proba
-        else:
-            # Classical ML model
-            if voting == 'hard':
-                y_pred = model.predict(X_test)
-            else:
-                if hasattr(model, 'predict_proba'):
-                    y_pred = model.predict_proba(X_test)
-                else:
-                    # If no probability method, use hard prediction
-                    y_pred = model.predict(X_test)
+        # First Conv block
+        layers.Conv1D(64, kernel_size=5, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(pool_size=2),
+        layers.Dropout(dropout_rate),
         
-        predictions_list.append(y_pred)
-    
-    # Combine predictions
-    if voting == 'hard':
-        # Majority voting
-        predictions_array = np.array(predictions_list)
-        final_predictions = []
+        # Second Conv block
+        layers.Conv1D(128, kernel_size=5, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(pool_size=2),
+        layers.Dropout(dropout_rate),
         
-        for i in range(predictions_array.shape[1]):
-            votes = predictions_array[:, i]
-            final_pred = np.bincount(votes.astype(int)).argmax()
-            final_predictions.append(final_pred)
+        # Third Conv block
+        layers.Conv1D(256, kernel_size=3, activation='relu', padding='same'),
+        layers.BatchNormalization(),
+        layers.MaxPooling1D(pool_size=2),
+        layers.Dropout(dropout_rate),
         
-        final_predictions = np.array(final_predictions)
-    else:
-        # Soft voting (average probabilities)
-        # Ensure all predictions are probability arrays
-        prob_arrays = []
-        for pred in predictions_list:
-            if len(pred.shape) == 1:
-                # Convert hard predictions to one-hot
-                num_classes = len(label_encoder.classes_)
-                one_hot = np.zeros((len(pred), num_classes))
-                one_hot[np.arange(len(pred)), pred.astype(int)] = 1
-                prob_arrays.append(one_hot)
-            else:
-                prob_arrays.append(pred)
+        # Flatten and dense layers
+        layers.Flatten(),
+        layers.Dense(128, activation='relu'),
+        layers.BatchNormalization(),
+        layers.Dropout(dropout_rate),
         
-        # Average probabilities
-        avg_probabilities = np.mean(prob_arrays, axis=0)
-        final_predictions = np.argmax(avg_probabilities, axis=1)
+        layers.Dense(64, activation='relu'),
+        layers.Dropout(dropout_rate),
+        
+        # Output layer
+        layers.Dense(num_classes, activation='softmax')
+    ])
     
-    # Get true labels
-    if len(y_test.shape) > 1:
-        y_true = np.argmax(y_test, axis=1)
-    else:
-        y_true = y_test
+    return model
+
+def train_cnn_model(X_train, y_train, X_val, y_val, num_classes, epochs=100):
+    """
+    Train 1D CNN model
+    """
+    print("\n" + "="*60)
+    print("TRAINING CONVOLUTIONAL NEURAL NETWORK (1D CNN)")
+    print("="*60)
     
-    # Calculate accuracy
-    accuracy = accuracy_score(y_true, final_predictions)
+    # Create model
+    input_dim = X_train.shape[1]
+    model = create_cnn_model(input_dim, num_classes)
     
-    print(f"\n{voting.capitalize()} Voting Ensemble Accuracy: {accuracy:.4f}")
+    # Compile model
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
     
-    # Print classification report
-    print("\nClassification Report:")
+    # Print model summary
+    print("\nModel Architecture:")
+    model.summary()
+    
+    # Callbacks
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=15,
+        restore_best_weights=True,
+        verbose=1
+    )
+    
+    reduce_lr = ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-7,
+        verbose=1
+    )
+    
+    checkpoint = ModelCheckpoint(
+        'best_cnn_model.h5',
+        monitor='val_accuracy',
+        save_best_only=True,
+        verbose=1
+    )
+    
+    # Train model
+    print("\nTraining model...")
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=32,
+        callbacks=[early_stopping, reduce_lr, checkpoint],
+        verbose=1
+    )
+    
+    return model, history
+
+# ============================================================================
+# VISUALIZATION
+# ============================================================================
+
+def plot_training_history(history, model_name):
+    """
+    Plot training and validation accuracy/loss curves
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    
+    # Accuracy plot
+    axes[0].plot(history.history['accuracy'], label='Train Accuracy', linewidth=2)
+    axes[0].plot(history.history['val_accuracy'], label='Val Accuracy', linewidth=2)
+    axes[0].set_title(f'{model_name} - Accuracy', fontsize=14, fontweight='bold')
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Accuracy')
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+    
+    # Loss plot
+    axes[1].plot(history.history['loss'], label='Train Loss', linewidth=2)
+    axes[1].plot(history.history['val_loss'], label='Val Loss', linewidth=2)
+    axes[1].set_title(f'{model_name} - Loss', fontsize=14, fontweight='bold')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Loss')
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(f'training_history_{model_name.lower().replace(" ", "_")}.png', 
+                dpi=150, bbox_inches='tight')
+    plt.show()
+
+# ============================================================================
+# MODEL EVALUATION
+# ============================================================================
+
+def evaluate_dl_model(model, X_test, y_test, label_encoder, model_name):
+    """
+    Evaluate deep learning model on test set
+    """
+    print("\n" + "="*60)
+    print(f"EVALUATING {model_name.upper()}")
+    print("="*60)
+    
+    # Make predictions
+    y_pred_proba = model.predict(X_test, verbose=0)
+    y_pred = np.argmax(y_pred_proba, axis=1)
+    y_true = np.argmax(y_test, axis=1)
+    
+    # Calculate metrics
+    accuracy = accuracy_score(y_true, y_pred)
+    
+    print(f"\nTest Accuracy: {accuracy:.4f}")
+    
+    # Classification report
+    print("\nDetailed Classification Report:")
     print(classification_report(
-        y_true, final_predictions,
+        y_true, y_pred,
         target_names=label_encoder.classes_
     ))
     
+    # Confusion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    
     # Plot confusion matrix
-    cm = confusion_matrix(y_true, final_predictions)
     plt.figure(figsize=(10, 8))
     sns.heatmap(
-        cm, annot=True, fmt='d', cmap='Greens',
+        cm, annot=True, fmt='d', cmap='Blues',
         xticklabels=label_encoder.classes_,
         yticklabels=label_encoder.classes_
     )
-    plt.title(f'Confusion Matrix - {voting.capitalize()} Voting Ensemble', 
-              fontsize=16, fontweight='bold')
+    plt.title(f'Confusion Matrix - {model_name}', fontsize=16, fontweight='bold')
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
     plt.tight_layout()
-    plt.savefig(f'confusion_matrix_{voting}_voting_ensemble.png', 
+    plt.savefig(f'confusion_matrix_{model_name.lower().replace(" ", "_")}.png',
                 dpi=150, bbox_inches='tight')
     plt.show()
     
-    return final_predictions, accuracy
-
-def weighted_ensemble(models, X_test, y_test, label_encoder, weights=None):
-    """
-    Weighted ensemble where each model has different weight
-    """
-    print("\n" + "="*60)
-    print("ENSEMBLE: WEIGHTED VOTING")
-    print("="*60)
-    
-    if weights is None:
-        # Equal weights if not specified
-        weights = {name: 1.0 for name in models.keys()}
-    
-    print(f"Weights: {weights}")
-    
-    weighted_probs = None
-    total_weight = sum(weights.values())
-    
-    # Get weighted predictions
-    for model_name, model in models.items():
-        print(f"Getting predictions from {model_name}...")
-        weight = weights[model_name]
-        
-        if model_name in ['Feedforward NN', 'CNN']:
-            y_pred_proba = model.predict(X_test, verbose=0)
-        else:
-            if hasattr(model, 'predict_proba'):
-                y_pred_proba = model.predict_proba(X_test)
-            else:
-                # Convert hard predictions to probabilities
-                y_pred = model.predict(X_test)
-                num_classes = len(label_encoder.classes_)
-                y_pred_proba = np.zeros((len(y_pred), num_classes))
-                y_pred_proba[np.arange(len(y_pred)), y_pred] = 1
-        
-        # Add weighted probabilities
-        if weighted_probs is None:
-            weighted_probs = weight * y_pred_proba
-        else:
-            weighted_probs += weight * y_pred_proba
-    
-    # Normalize by total weight
-    weighted_probs /= total_weight
-    
-    # Get final predictions
-    final_predictions = np.argmax(weighted_probs, axis=1)
-    
-    # Get true labels
-    if len(y_test.shape) > 1:
-        y_true = np.argmax(y_test, axis=1)
-    else:
-        y_true = y_test
-    
-    # Calculate accuracy
-    accuracy = accuracy_score(y_true, final_predictions)
-    
-    print(f"\nWeighted Ensemble Accuracy: {accuracy:.4f}")
-    
-    return final_predictions, accuracy
-
-# ============================================================================
-# t-SNE VISUALIZATION
-# ============================================================================
-
-def visualize_tsne(X, y, label_encoder, title="t-SNE Visualization", perplexity=30):
-    """
-    Create t-SNE visualization of feature space
-    """
-    print("\n" + "="*60)
-    print("CREATING t-SNE VISUALIZATION")
-    print("="*60)
-    print("This may take a few minutes...")
-    
-    # Convert one-hot encoded labels to integers if needed
-    if len(y.shape) > 1:
-        y = np.argmax(y, axis=1)
-    
-    # Reduce dimensionality with PCA first (speeds up t-SNE)
-    if X.shape[1] > 50:
-        print("\nApplying PCA preprocessing...")
-        pca = PCA(n_components=50)
-        X_pca = pca.fit_transform(X)
-        print(f"Explained variance: {pca.explained_variance_ratio_.sum():.2%}")
-    else:
-        X_pca = X
-    
-    # Apply t-SNE
-    print("\nApplying t-SNE...")
-    tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42, n_iter=1000)
-    X_tsne = tsne.fit_transform(X_pca)
-    
-    # Create visualization
-    plt.figure(figsize=(12, 10))
-    
-    # Get unique labels and colors
-    unique_labels = np.unique(y)
-    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
-    
-    # Plot each emotion class
-    for idx, label in enumerate(unique_labels):
-        mask = y == label
-        plt.scatter(
-            X_tsne[mask, 0], X_tsne[mask, 1],
-            c=[colors[idx]], label=label_encoder.classes_[label],
-            alpha=0.6, s=50, edgecolors='black', linewidth=0.5
-        )
-    
-    plt.title(title, fontsize=16, fontweight='bold')
-    plt.xlabel('t-SNE Component 1', fontsize=12)
-    plt.ylabel('t-SNE Component 2', fontsize=12)
-    plt.legend(title='Emotion', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('tsne_visualization.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    
-    print("\n✓ t-SNE visualization saved!")
-
-# ============================================================================
-# PCA VISUALIZATION
-# ============================================================================
-
-def visualize_pca(X, y, label_encoder, title="PCA Visualization"):
-    """
-    Create PCA visualization showing first 2 principal components
-    """
-    print("\n" + "="*60)
-    print("CREATING PCA VISUALIZATION")
-    print("="*60)
-    
-    # Convert one-hot encoded labels to integers if needed
-    if len(y.shape) > 1:
-        y = np.argmax(y, axis=1)
-    
-    # Apply PCA
-    pca = PCA(n_components=2)
-    X_pca = pca.fit_transform(X)
-    
-    print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
-    print(f"Total explained variance: {pca.explained_variance_ratio_.sum():.2%}")
-    
-    # Create visualization
-    plt.figure(figsize=(12, 10))
-    
-    # Get unique labels and colors
-    unique_labels = np.unique(y)
-    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
-    
-    # Plot each emotion class
-    for idx, label in enumerate(unique_labels):
-        mask = y == label
-        plt.scatter(
-            X_pca[mask, 0], X_pca[mask, 1],
-            c=[colors[idx]], label=label_encoder.classes_[label],
-            alpha=0.6, s=50, edgecolors='black', linewidth=0.5
-        )
-    
-    plt.title(title, fontsize=16, fontweight='bold')
-    plt.xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)', fontsize=12)
-    plt.ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)', fontsize=12)
-    plt.legend(title='Emotion', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('pca_visualization.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    
-    print("\n✓ PCA visualization saved!")
-
-# ============================================================================
-# COMPREHENSIVE COMPARISON
-# ============================================================================
-
-def create_final_comparison(results_dict):
-    """
-    Create comprehensive comparison of all models including ensembles
-    """
-    print("\n" + "="*60)
-    print("FINAL MODEL COMPARISON")
-    print("="*60)
-    
-    # Create comparison table
-    comparison_data = []
-    for model_name, accuracy in results_dict.items():
-        comparison_data.append({
-            'Model': model_name,
-            'Test Accuracy': accuracy
-        })
-    
-    comparison_df = pd.DataFrame(comparison_data)
-    comparison_df = comparison_df.sort_values('Test Accuracy', ascending=False)
-    
-    print("\n", comparison_df.to_string(index=False))
-    
-    # Visualize comparison
-    plt.figure(figsize=(12, 6))
-    bars = plt.bar(comparison_df['Model'], comparison_df['Test Accuracy'], 
-                   color='skyblue', edgecolor='black', linewidth=1.5)
-    
-    # Color the best model
-    max_idx = comparison_df['Test Accuracy'].argmax()
-    bars[max_idx].set_color('gold')
-    bars[max_idx].set_edgecolor('darkgoldenrod')
-    bars[max_idx].set_linewidth(2)
-    
-    plt.title('Final Model Comparison - Test Accuracy', fontsize=16, fontweight='bold')
-    plt.xlabel('Model', fontsize=12)
-    plt.ylabel('Accuracy', fontsize=12)
-    plt.ylim([0, 1.0])
-    plt.xticks(rotation=45, ha='right')
-    plt.grid(axis='y', alpha=0.3)
-    
-    # Add value labels on bars
-    for bar in bars:
-        height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2., height,
-                f'{height:.4f}',
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    plt.tight_layout()
-    plt.savefig('final_model_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
-    
-    return comparison_df
+    return {
+        'accuracy': accuracy,
+        'predictions': y_pred,
+        'confusion_matrix': cm
+    }
 
 # ============================================================================
 # MAIN EXECUTION
@@ -413,89 +395,76 @@ def create_final_comparison(results_dict):
 if __name__ == "__main__":
     
     print("="*60)
-    print("SPEECH EMOTION RECOGNITION - MODEL FUSION & VISUALIZATION")
+    print("SPEECH EMOTION RECOGNITION - DEEP LEARNING MODELS")
     print("="*60)
+    print(f"TensorFlow version: {tf.__version__}")
+    print(f"GPU Available: {len(tf.config.list_physical_devices('GPU')) > 0}")
     
-    # Load models
-    models, scaler, label_encoder = load_all_models()
-    
-    if len(models) == 0:
-        print("\n❌ No models found! Please train models first (Steps 3-4).")
-        exit()
-    
-    # Load test data
-    print("\nLoading test data...")
-    features_df = pd.read_csv('ravdess_features.csv')
-    feature_cols = [col for col in features_df.columns if col not in ['emotion', 'file_path']]
-    X = features_df[feature_cols].values
-    y = features_df['emotion'].values
-    
-    # Encode and split
-    from sklearn.model_selection import train_test_split
-    from tensorflow.keras.utils import to_categorical
-    
-    y_encoded = label_encoder.transform(y)
-    y_categorical = to_categorical(y_encoded)
-    
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_categorical, test_size=0.2, random_state=42, stratify=y_encoded
+    # Step 1: Prepare data
+    (X_train, X_val, X_test,
+     y_train, y_val, y_test,
+     scaler, label_encoder, num_classes) = prepare_data_for_dl(
+        'ravdess_features.csv',
+        test_size=0.2,
+        val_size=0.1,
+        random_state=42
     )
     
-    # Scale features
-    X_test_scaled = scaler.transform(X_test)
+    # Step 2: Train Feedforward Neural Network
+    ffnn_model, ffnn_history = train_feedforward_model(
+        X_train, y_train, X_val, y_val,
+        num_classes=num_classes,
+        epochs=100
+    )
     
-    # Store all results
-    all_results = {}
+    # Plot training history
+    plot_training_history(ffnn_history, "Feedforward NN")
     
-    # Individual model accuracies (if available from previous steps)
+    # Evaluate model
+    ffnn_results = evaluate_dl_model(
+        ffnn_model, X_test, y_test,
+        label_encoder, "Feedforward NN"
+    )
+    
+    # Step 3: Train CNN
+    cnn_model, cnn_history = train_cnn_model(
+        X_train, y_train, X_val, y_val,
+        num_classes=num_classes,
+        epochs=100
+    )
+    
+    # Plot training history
+    plot_training_history(cnn_history, "CNN")
+    
+    # Evaluate model
+    cnn_results = evaluate_dl_model(
+        cnn_model, X_test, y_test,
+        label_encoder, "CNN"
+    )
+    
+    # Step 4: Compare results
     print("\n" + "="*60)
-    print("INDIVIDUAL MODEL PERFORMANCE")
+    print("MODEL COMPARISON")
     print("="*60)
+    print(f"\nFeedforward NN Test Accuracy: {ffnn_results['accuracy']:.4f}")
+    print(f"CNN Test Accuracy: {cnn_results['accuracy']:.4f}")
     
-    for model_name, model in models.items():
-        if model_name in ['Feedforward NN', 'CNN']:
-            y_pred = np.argmax(model.predict(X_test_scaled, verbose=0), axis=1)
-        else:
-            y_pred = model.predict(X_test_scaled)
-        
-        y_true = np.argmax(y_test, axis=1)
-        accuracy = accuracy_score(y_true, y_pred)
-        all_results[model_name] = accuracy
-        print(f"{model_name}: {accuracy:.4f}")
-    
-    # Ensemble methods
-    if len(models) >= 2:
-        # Hard voting
-        _, hard_voting_acc = voting_ensemble(
-            models, X_test_scaled, y_test, label_encoder, voting='hard'
-        )
-        all_results['Hard Voting Ensemble'] = hard_voting_acc
-        
-        # Soft voting
-        _, soft_voting_acc = voting_ensemble(
-            models, X_test_scaled, y_test, label_encoder, voting='soft'
-        )
-        all_results['Soft Voting Ensemble'] = soft_voting_acc
-    
-    # Create visualizations
-    visualize_pca(X_test_scaled, y_test, label_encoder, "PCA - Test Set")
-    visualize_tsne(X_test_scaled, y_test, label_encoder, "t-SNE - Test Set", perplexity=30)
-    
-    # Final comparison
-    comparison_df = create_final_comparison(all_results)
-    
-    # Save results
-    comparison_df.to_csv('final_results.csv', index=False)
+    # Save models
+    print("\n" + "="*60)
+    print("SAVING MODELS")
+    print("="*60)
+    ffnn_model.save('feedforward_model.h5')
+    cnn_model.save('cnn_model.h5')
+    print("✓ Models saved successfully!")
     
     print("\n" + "="*60)
-    print("PROJECT COMPLETE!")
+    print("DEEP LEARNING TRAINING COMPLETE!")
     print("="*60)
-    print("\nAll generated files:")
-    print("  - final_results.csv")
-    print("  - final_model_comparison.png")
-    print("  - pca_visualization.png")
-    print("  - tsne_visualization.png")
-    print("  - confusion_matrix_*_voting_ensemble.png")
-    print("\nBest performing model:")
-    best_model = comparison_df.iloc[0]
-    print(f"  {best_model['Model']}: {best_model['Test Accuracy']:.4f}")
+    print("\nGenerated files:")
+    print("  - feedforward_model.keras")
+    print("  - cnn_model.keras")
+    print("  - best_feedforward_model.keras (best checkpoint)")
+    print("  - best_cnn_model.keras (best checkpoint)")
+    print("  - Training history plots")
+    print("  - Confusion matrices")
+    print("\nNext step: Model fusion and advanced analysis (Step 5)")
