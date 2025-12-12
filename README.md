@@ -150,9 +150,9 @@ Matplotlib & Seaborn: Visualization
 
 🎓 Academic Context
 This project was developed for CPE646 Pattern Recognition course.
-📝 License
+License
 This project is licensed under the MIT License - see the LICENSE file for details.
-🙏 Acknowledgments
+Acknowledgments
 
 RAVDESS dataset creators
 CREMA-D dataset creators
