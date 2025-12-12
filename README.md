@@ -152,6 +152,7 @@ Matplotlib & Seaborn: Visualization
 This project was developed for CPE646 Pattern Recognition course.
 License
 This project is licensed under the MIT License - see the LICENSE file for details.
+
 Acknowledgments
 
 RAVDESS dataset creators
