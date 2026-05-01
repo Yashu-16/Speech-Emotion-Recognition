@@ -14,7 +14,7 @@ import soundfile as sf
 import tempfile
 import os
 
-# Page configuration
+
 st.set_page_config(
     page_title="Speech Emotion Recognition",
     page_icon="🎭",
@@ -22,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+
 st.markdown("""
     <style>
     .main {
@@ -34,12 +34,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Title and description
+
 st.title("🎭 Speech Emotion Recognition")
 st.markdown("### Detect emotions from speech using Machine Learning")
 st.markdown("---")
 
-# Sidebar
+
 with st.sidebar:
     st.header("⚙️ Settings")
     model_choice = st.selectbox(
@@ -59,20 +59,16 @@ with st.sidebar:
     - **Surprised** 😲
     - **Disgusted** 🤢
     - **Calm** 😌
-    
-    **Note**: Using Classical ML models only.
-    Install TensorFlow to enable Deep Learning models.
     """)
     
     st.markdown("---")
-    st.markdown("**Team:** Juhi Dixit & Yash Randhe")
 
-# Feature extraction functions
+
 @st.cache_data
 def extract_features(audio, sr):
     """Extract all acoustic features from audio"""
     
-    # MFCCs
+ 
     mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
     mfcc_mean = np.mean(mfccs, axis=1)
     mfcc_std = np.std(mfccs, axis=1)
@@ -80,7 +76,7 @@ def extract_features(audio, sr):
     mfcc_min = np.min(mfccs, axis=1)
     mfcc_features = np.concatenate([mfcc_mean, mfcc_std, mfcc_max, mfcc_min])
     
-    # Pitch
+ 
     pitches, magnitudes = librosa.piptrack(y=audio, sr=sr)
     pitch_values = []
     for t in range(pitches.shape[1]):
@@ -316,12 +312,21 @@ def main():
         
         if uploaded_file is not None:
             # Save uploaded file temporarily
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav', mode='wb') as tmp_file:
+                uploaded_file.seek(0)  # Reset file pointer
                 tmp_file.write(uploaded_file.read())
+                tmp_file.flush()  # Ensure data is written
                 tmp_path = tmp_file.name
             
             # Load audio
-            audio, sr = librosa.load(tmp_path, sr=22050)
+            try:
+                audio, sr = librosa.load(tmp_path, sr=22050)
+            except Exception as e:
+                st.error(f"Error loading audio file: {str(e)}")
+                st.info("💡 Try converting your audio to WAV format before uploading.")
+                os.unlink(tmp_path)
+                st.stop()
+                return
             
             # Display audio player
             st.audio(uploaded_file, format='audio/wav')
