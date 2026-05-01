@@ -387,12 +387,8 @@ def main():
         - Zero-crossing rate
         - Chroma features
         
-        #### 👥 Team:
-        - Juhi Dixit
-        - Yash Randhe
-        
         #### 📚 Course:
-        CPE646 Pattern Recognition
+        AAI 628 WS Deep Learning
         
         ---
         
