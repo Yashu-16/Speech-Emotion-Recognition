@@ -1,7 +1,5 @@
 Speech Emotion Recognition
 A comprehensive machine learning project that recognizes human emotions from speech using both classical ML and deep learning approaches.
-👥 Team Members
-Yash Randhe
 
 📋 Project Overview
 This project implements a Speech Emotion Recognition system capable of detecting emotions such as happiness, anger, sadness, and neutrality from audio recordings. It uses multiple approaches including:
@@ -149,7 +147,7 @@ NumPy & Pandas: Data manipulation
 Matplotlib & Seaborn: Visualization
 
 🎓 Academic Context
-This project was developed for CPE646 Pattern Recognition course.
+This project was developed for AAI 628 WS Deep Learning.
 License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
